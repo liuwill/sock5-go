@@ -2,9 +2,11 @@ package sock5
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -28,7 +30,7 @@ func (processor *HandshakeProcessor) execute(tcpConnection *TcpConnection) bool 
 		return false
 	}
 
-	if n != 3 || string(buf[0]) != string([]byte{0x05, 0x01, 0x00}) {
+	if n != 3 || string(buf) != string([]byte{0x05, 0x01, 0x00}) {
 		return false
 	}
 
@@ -54,15 +56,48 @@ func (processor *RequestProcessor) execute(tcpConnection *TcpConnection) bool {
 		return false
 	}
 	distType := headers[3]
+
+	var targetByte []byte
 	switch distType {
 	case 0x01:
+		targetByte = make([]byte, 4)
 	case 0x03:
-	case 0x04:
+		lengthBuf := make([]byte, 1)
+		_, err = tcpConnection.conn.Read(lengthBuf)
+		if err != nil {
+			return false
+		}
+
+		addrLen := int(binary.BigEndian.Uint64(lengthBuf))
+		targetByte = make([]byte, addrLen)
+	// case 0x04:
 	default:
 		return false
 	}
+	n, err = tcpConnection.conn.Read(targetByte)
+	if err != nil {
+		return false
+	}
 
-	tcpConnection.conn.Write([]byte{0x05, 0x00})
+	targetAddr := string(targetByte)
+	portBuf := make([]byte, 1)
+	n, err = tcpConnection.conn.Read(portBuf)
+	targetPort := string(portBuf)
+
+	// TODO create server proxy connection
+	proxyConnection := NewProxyConnection(tcpConnection, targetAddr, targetPort)
+	if proxyConnection != nil {
+		return false
+	}
+	tcpConnection.AddProxy(targetAddr, targetPort, proxyConnection)
+
+	responseBytes := []byte{0x05, 0x00, 0x00, distType}
+	localAddr := tcpConnection.conn.LocalAddr().String()
+	localData := strings.Split(localAddr, ":")
+	responseBytes = append(responseBytes, []byte(localData[0])...)
+	responseBytes = append(responseBytes, []byte(localData[1])...)
+
+	tcpConnection.conn.Write(responseBytes)
 	return true
 }
 
@@ -71,10 +106,28 @@ func (processor *RequestProcessor) nextProcessor() Processor {
 }
 
 type ProxyConnection struct {
+	address string
+	port    string
 	conn    net.Conn
 	reader  *bufio.Reader
 	client  *TcpConnection
 	message chan []byte
+}
+
+func NewProxyConnection(tcpConnection *TcpConnection, targetAddr string, targetPort string) *ProxyConnection {
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", targetAddr, targetPort))
+	if err != nil {
+		return nil
+	}
+
+	return &ProxyConnection{
+		conn:    conn,
+		reader:  bufio.NewReader(conn),
+		client:  tcpConnection,
+		address: targetAddr,
+		port:    targetPort,
+		message: make(chan []byte),
+	}
 }
 
 type TcpConnection struct {
@@ -83,8 +136,15 @@ type TcpConnection struct {
 	reader      *bufio.Reader
 	server      *Socks5Server
 	message     chan []byte
-	targetProxy map[string]ProxyConnection
+	targetProxy map[string]*ProxyConnection
 	processor   Processor
+}
+
+func (tcpConnection *TcpConnection) AddProxy(address string, port string, proxy *ProxyConnection) {
+	key := fmt.Sprintf("%s:%s", address, port)
+	tcpConnection.targetProxy[key] = proxy
+
+	// TODO 处理Proxy，建立连接和全双工通信
 }
 
 func (tcpConnection *TcpConnection) Close() {
@@ -138,7 +198,7 @@ func NewSocks5Server(address string) (*Socks5Server, error) {
 		return nil, err
 	}
 
-	fmt.Printf("server start at: %s", address)
+	fmt.Printf("server start at [ %s ]", address)
 	socksServer := &Socks5Server{
 		listener:    listener,
 		peers:       make(map[string]*TcpConnection),
@@ -158,7 +218,7 @@ func (server *Socks5Server) HandleConnection(conn net.Conn) {
 		server:      server,
 		message:     make(chan []byte),
 		processor:   &HandshakeProcessor{},
-		targetProxy: make(map[string]ProxyConnection),
+		targetProxy: make(map[string]*ProxyConnection),
 	}
 
 	go startTransform(tcpConnection)
