@@ -26,6 +26,6 @@ func Test_handshack(t *testing.T) {
 
 	expected := []byte{0x05, 0x00}
 	if string(buf[:n]) != string(expected) {
-		t.Fatalf("Handshake protocal failure expected %s ,but got %s", expected, buf[:n])
+		t.Fatalf("Handshake protocol failure expected %s ,but got %s", expected, buf[:n])
 	}
 }

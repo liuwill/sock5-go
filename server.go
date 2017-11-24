@@ -18,42 +18,73 @@ type Processor interface {
 	nextProcessor() Processor
 }
 
-type HandshakeProcess struct{}
+type HandshakeProcessor struct{}
 
-func (processor *HandshakeProcess) execute(tcpConnection *TcpConnection) bool {
+func (processor *HandshakeProcessor) execute(tcpConnection *TcpConnection) bool {
 	buf := make([]byte, 3)
 	n, err := tcpConnection.conn.Read(buf)
-	// buf := new(bytes.Buffer)
-	// payload, err := ioutil.ReadAll(tcpConnection.conn)
-	// n, err := buf.Write(payload)
 
 	if err != nil {
 		return false
 	}
 
-	if buf[0] != 0x05 || buf[1] != 0x01 || buf[2] != 0x00 {
-		println("disconnect", n)
+	if n != 3 || string(buf[0]) != string([]byte{0x05, 0x01, 0x00}) {
 		return false
 	}
 
 	tcpConnection.conn.Write([]byte{0x05, 0x00})
-	// buffer := buf.Bytes()
-	// if buf[0]
-	// println(string(buf[0:1]), "=-=-=-")
 	return true
 }
 
-func (processor *HandshakeProcess) nextProcessor() Processor {
+func (processor *HandshakeProcessor) nextProcessor() Processor {
+	return &RequestProcessor{}
+}
+
+type RequestProcessor struct{}
+
+func (processor *RequestProcessor) execute(tcpConnection *TcpConnection) bool {
+	headers := make([]byte, 4)
+	n, err := tcpConnection.conn.Read(headers)
+
+	if err != nil {
+		return false
+	}
+
+	if n != 4 || string(headers[:3]) != string([]byte{0x05, 0x01, 0x00}) {
+		return false
+	}
+	distType := headers[3]
+	switch distType {
+	case 0x01:
+	case 0x03:
+	case 0x04:
+	default:
+		return false
+	}
+
+	tcpConnection.conn.Write([]byte{0x05, 0x00})
+	return true
+}
+
+func (processor *RequestProcessor) nextProcessor() Processor {
 	return nil
 }
 
+type ProxyConnection struct {
+	conn    net.Conn
+	reader  *bufio.Reader
+	client  *TcpConnection
+	message chan []byte
+}
+
 type TcpConnection struct {
-	id        string
-	conn      net.Conn
-	reader    *bufio.Reader
-	server    *Socks5Server
-	message   chan []byte
-	processor Processor
+	id          string
+	conn        net.Conn
+	reader      *bufio.Reader
+	server      *Socks5Server
+	message     chan []byte
+	targetProxy map[string]ProxyConnection
+	processor   Processor
 }
 
 func (tcpConnection *TcpConnection) Close() {
@@ -121,12 +152,13 @@ func NewSocks5Server(address string) (*Socks5Server, error) {
 
 func (server *Socks5Server) HandleConnection(conn net.Conn) {
 	tcpConnection := &TcpConnection{
-		id:        randSeq(10),
-		conn:      conn,
-		reader:    bufio.NewReader(conn),
-		server:    server,
-		message:   make(chan []byte),
-		processor: &HandshakeProcess{},
+		id:          randSeq(10),
+		conn:        conn,
+		reader:      bufio.NewReader(conn),
+		server:      server,
+		message:     make(chan []byte),
+		processor:   &HandshakeProcessor{},
+		targetProxy: make(map[string]ProxyConnection),
 	}
 
 	go startTransform(tcpConnection)
