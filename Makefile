@@ -4,4 +4,7 @@ install:
 server:
 	cd bin/ && go run main.go
 
-.PHONY: server
+test:
+	go test
+
+.PHONY: server test

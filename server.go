@@ -14,13 +14,13 @@ const (
 )
 
 type Processor interface {
-	execute(tcpConnection *TcpConnection)
+	execute(tcpConnection *TcpConnection) bool
 	nextProcessor() Processor
 }
 
 type HandshakeProcess struct{}
 
-func (processor *HandshakeProcess) execute(tcpConnection *TcpConnection) {
+func (processor *HandshakeProcess) execute(tcpConnection *TcpConnection) bool {
 	buf := make([]byte, 3)
 	n, err := tcpConnection.conn.Read(buf)
 	// buf := new(bytes.Buffer)
@@ -28,17 +28,21 @@ func (processor *HandshakeProcess) execute(tcpConnection *TcpConnection) {
 	// n, err := buf.Write(payload)
 
 	if err != nil {
-		return
+		return false
 	}
 
 	if buf[0] != 0x05 || buf[1] != 0x01 || buf[2] != 0x00 {
 		println("disconnect", n)
+		return false
 	}
-	println("====---")
+
+	tcpConnection.conn.Write([]byte{0x05, 0x00})
 	// buffer := buf.Bytes()
 	// if buf[0]
 	// println(string(buf[0:1]), "=-=-=-")
+	return true
 }
+
 func (processor *HandshakeProcess) nextProcessor() Processor {
 	return nil
 }
@@ -136,9 +140,12 @@ func startTransform(tcpConnection *TcpConnection) {
 	}()
 
 	go tcpConnection.Run()
-	// buffer := make([]byte, 2048)
 	for {
-		tcpConnection.processor.execute(tcpConnection)
+		success := tcpConnection.processor.execute(tcpConnection)
+		if !success {
+			return
+		}
+
 		processor := tcpConnection.processor.nextProcessor()
 		if processor == nil {
 			return

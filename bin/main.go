@@ -2,7 +2,7 @@ package main
 
 import (
 	"os"
-	"sock5"
+	"sock5-go"
 )
 
 func main() {
