@@ -31,7 +31,7 @@ type Socks5Server struct {
 	outPeerChan chan *TcpConnection
 }
 
-func NewSock5ServerConfigurable(address string, config ServerConfiguration) (*Socks5Server, error) {
+func NewSocks5ServerConfigurable(address string, config ServerConfiguration) (*Socks5Server, error) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func NewSock5ServerConfigurable(address string, config ServerConfiguration) (*So
 }
 
 func NewSocks5Server(address string) (*Socks5Server, error) {
-	return NewSock5ServerConfigurable(address, ServerConfiguration{
+	return NewSocks5ServerConfigurable(address, ServerConfiguration{
 		Mode:     "basic",
 		OpenHttp: false,
 	})
