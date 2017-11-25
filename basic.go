@@ -1,7 +1,7 @@
 package sock5
 
 import (
-	"fmt"
+	"log"
 	"strconv"
 )
 
@@ -77,7 +77,7 @@ func (processor *RequestProcessor) execute(tcpConnection *TcpConnection) bool {
 
 	go tcpConnection.AddProxy(targetAddr, targetPort, proxyConnection)
 
-	fmt.Printf("socks connect establish from [%s] to [%s], Domain: [%s] \n", tcpConnection.conn.RemoteAddr().String(), proxyConnection.conn.RemoteAddr().String(), targetAddr)
+	log.Printf("socks connect establish from [%s] to [%s], Domain: [%s]", tcpConnection.conn.RemoteAddr().String(), proxyConnection.conn.RemoteAddr().String(), targetAddr)
 	responseBytes := []byte{0x05, 0x00, 0x00, distType, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
 	tcpConnection.conn.Write(responseBytes)

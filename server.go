@@ -2,8 +2,7 @@ package sock5
 
 import (
 	"bufio"
-	"fmt"
-	"math/rand"
+	"log"
 	"net"
 	"time"
 )
@@ -12,6 +11,8 @@ const (
 	// Time allowed to read from or write a message to the peer.
 	writeWait = 30 * time.Second
 )
+
+type ServerConfiguration struct{}
 
 type Socks5Server struct {
 	listener net.Listener
@@ -28,7 +29,7 @@ func NewSocks5Server(address string) (*Socks5Server, error) {
 		return nil, err
 	}
 
-	fmt.Printf("server start at [ %s ]", address)
+	log.Printf("server start at [ %s ]", address)
 	socksServer := &Socks5Server{
 		listener:    listener,
 		peers:       make(map[string]*TcpConnection),
@@ -41,8 +42,10 @@ func NewSocks5Server(address string) (*Socks5Server, error) {
 }
 
 func (server *Socks5Server) HandleConnection(conn net.Conn) {
+	addr := conn.RemoteAddr().String()
+
 	tcpConnection := &TcpConnection{
-		id:          randSeq(10),
+		id:          GenerateAddrHash(addr),
 		conn:        conn,
 		reader:      bufio.NewReader(conn),
 		server:      server,
@@ -101,14 +104,4 @@ func (server *Socks5Server) Start() error {
 		// 异步处理，防止阻塞处理routine
 		server.HandleConnection(conn)
 	}
-}
-
-var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func randSeq(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
 }
