@@ -2,6 +2,7 @@ package sock5
 
 import (
 	"bufio"
+	"errors"
 	"log"
 	"net"
 	"time"
@@ -12,26 +13,38 @@ const (
 	writeWait = 30 * time.Second
 )
 
-type ServerConfiguration struct{}
+var processorController map[string]ProcessorBuilder
+
+type ServerConfiguration struct {
+	Mode     string // basic, auth, or ...
+	OpenHttp bool
+}
 
 type Socks5Server struct {
 	listener net.Listener
 	clients  map[string]net.Conn
+
+	builder ProcessorBuilder
 
 	peers       map[string]*TcpConnection
 	inPeerChan  chan *TcpConnection
 	outPeerChan chan *TcpConnection
 }
 
-func NewSocks5Server(address string) (*Socks5Server, error) {
+func NewSock5ServerConfigurable(address string, config ServerConfiguration) (*Socks5Server, error) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, err
 	}
 
+	if _, ok := processorController[config.Mode]; !ok {
+		return nil, errors.New("mode not exists")
+	}
+
 	log.Printf("server start at [ %s ]", address)
 	socksServer := &Socks5Server{
 		listener:    listener,
+		builder:     processorController[config.Mode],
 		peers:       make(map[string]*TcpConnection),
 		clients:     make(map[string]net.Conn),
 		inPeerChan:  make(chan *TcpConnection),
@@ -39,6 +52,13 @@ func NewSocks5Server(address string) (*Socks5Server, error) {
 	}
 	go socksServer.Run()
 	return socksServer, nil
+}
+
+func NewSocks5Server(address string) (*Socks5Server, error) {
+	return NewSock5ServerConfigurable(address, ServerConfiguration{
+		Mode:     "basic",
+		OpenHttp: false,
+	})
 }
 
 func (server *Socks5Server) HandleConnection(conn net.Conn) {
@@ -50,7 +70,7 @@ func (server *Socks5Server) HandleConnection(conn net.Conn) {
 		reader:      bufio.NewReader(conn),
 		server:      server,
 		message:     make(chan []byte),
-		processor:   &HandshakeProcessor{},
+		processor:   server.builder(),
 		targetProxy: make(map[string]*ProxyConnection),
 	}
 
@@ -104,4 +124,12 @@ func (server *Socks5Server) Start() error {
 		// 异步处理，防止阻塞处理routine
 		server.HandleConnection(conn)
 	}
+}
+
+func installProcessorBuilder(key string, builder ProcessorBuilder) {
+	if processorController == nil {
+		processorController = make(map[string]ProcessorBuilder)
+	}
+
+	processorController[key] = builder
 }

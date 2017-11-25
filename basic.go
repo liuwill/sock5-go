@@ -87,3 +87,9 @@ func (processor *RequestProcessor) execute(tcpConnection *TcpConnection) bool {
 func (processor *RequestProcessor) nextProcessor() Processor {
 	return nil
 }
+
+func init() {
+	installProcessorBuilder("basic", func() Processor {
+		return &HandshakeProcessor{}
+	})
+}
