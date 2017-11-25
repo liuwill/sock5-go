@@ -2,11 +2,11 @@ package sock5
 
 import (
 	"bufio"
-	"encoding/binary"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
-	"strings"
+	"strconv"
 	"time"
 )
 
@@ -68,7 +68,7 @@ func (processor *RequestProcessor) execute(tcpConnection *TcpConnection) bool {
 			return false
 		}
 
-		addrLen := int(binary.BigEndian.Uint64(lengthBuf))
+		addrLen := int(lengthBuf[0])
 		targetByte = make([]byte, addrLen)
 	// case 0x04:
 	default:
@@ -80,22 +80,20 @@ func (processor *RequestProcessor) execute(tcpConnection *TcpConnection) bool {
 	}
 
 	targetAddr := string(targetByte)
-	portBuf := make([]byte, 1)
-	n, err = tcpConnection.conn.Read(portBuf)
-	targetPort := string(portBuf)
+	portBuffer := make([]byte, 2)
+	n, err = tcpConnection.conn.Read(portBuffer)
+	targetPort := strconv.Itoa(int(portBuffer[0])<<8 | int(portBuffer[1]))
 
 	// TODO create server proxy connection
 	proxyConnection := NewProxyConnection(tcpConnection, targetAddr, targetPort)
-	if proxyConnection != nil {
+	if proxyConnection == nil {
 		return false
 	}
-	tcpConnection.AddProxy(targetAddr, targetPort, proxyConnection)
 
-	responseBytes := []byte{0x05, 0x00, 0x00, distType}
-	localAddr := tcpConnection.conn.LocalAddr().String()
-	localData := strings.Split(localAddr, ":")
-	responseBytes = append(responseBytes, []byte(localData[0])...)
-	responseBytes = append(responseBytes, []byte(localData[1])...)
+	go tcpConnection.AddProxy(targetAddr, targetPort, proxyConnection)
+
+	fmt.Printf("socks connect establish from [%s] to [%s], Domain: [%s] \n", tcpConnection.conn.RemoteAddr().String(), proxyConnection.conn.RemoteAddr().String(), targetAddr)
+	responseBytes := []byte{0x05, 0x00, 0x00, distType, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
 	tcpConnection.conn.Write(responseBytes)
 	return true
@@ -145,6 +143,9 @@ func (tcpConnection *TcpConnection) AddProxy(address string, port string, proxy 
 	tcpConnection.targetProxy[key] = proxy
 
 	// TODO 处理Proxy，建立连接和全双工通信
+	//进行转发
+	go io.Copy(proxy.conn, tcpConnection.conn)
+	io.Copy(tcpConnection.conn, proxy.conn)
 }
 
 func (tcpConnection *TcpConnection) Close() {
