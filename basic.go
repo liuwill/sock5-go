@@ -30,46 +30,57 @@ func (processor *HandshakeProcessor) nextProcessor() Processor {
 type RequestProcessor struct{}
 
 func (processor *RequestProcessor) execute(tcpConnection *TcpConnection) bool {
-	headers := make([]byte, 4)
-	n, err := tcpConnection.conn.Read(headers)
+	packBytes := make([]byte, 1024)
+	n, err := tcpConnection.conn.Read(packBytes)
 
-	if err != nil {
+	if err != nil || n < 5 {
 		return false
 	}
+	for i, val := range packBytes {
+		if i >= n {
+			break
+		}
+		print(int(val))
+		print(" ")
+	}
+	println()
+	headers := packBytes[0:4]
 
-	if n != 4 || string(headers[:3]) != string([]byte{0x05, 0x01, 0x00}) {
+	if string(headers[:3]) != string([]byte{0x05, 0x01, 0x00}) {
 		return false
 	}
 	distType := headers[3]
 
 	var targetByte []byte
+	portStart := 0
 	switch distType {
 	case 0x01:
-		targetByte = make([]byte, 4)
+		targetByte = packBytes[4:8] // make([]byte, 4)
+		portStart = 8
 	case 0x03:
-		lengthBuf := make([]byte, 1)
-		_, err = tcpConnection.conn.Read(lengthBuf)
-		if err != nil {
-			return false
-		}
+		lengthBuf := packBytes[4:5] // make([]byte, 1)
+		// _, err = tcpConnection.conn.Read(lengthBuf)
+		// if err != nil {
+		// 	return false
+		// }
 
 		addrLen := int(lengthBuf[0])
-		targetByte = make([]byte, addrLen)
+		targetByte = packBytes[5 : addrLen+5] // make([]byte, addrLen)
+		portStart = addrLen + 5
 	// case 0x04:
 	default:
 		return false
 	}
-	n, err = tcpConnection.conn.Read(targetByte)
-	if err != nil {
-		return false
-	}
+	// n, err = tcpConnection.conn.Read(targetByte)
+	// if err != nil {
+	// 	return false
+	// }
 
 	targetAddr := string(targetByte)
-	portBuffer := make([]byte, 2)
-	n, err = tcpConnection.conn.Read(portBuffer)
+	portBuffer := packBytes[portStart : portStart+2] // make([]byte, 2)
+	// n, err = tcpConnection.conn.Read(portBuffer)
 	targetPort := strconv.Itoa(int(portBuffer[0])<<8 | int(portBuffer[1]))
 
-	// TODO create server proxy connection
 	proxyConnection := NewProxyConnection(tcpConnection, targetAddr, targetPort)
 	if proxyConnection == nil {
 		return false
