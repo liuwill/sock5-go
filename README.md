@@ -43,3 +43,8 @@ func main() {
   sock5Server.Start()
 }
 ```
+
+## 连接方式（chrome）
+
+MacOS
+系统偏好设置->网络->高级->代理
